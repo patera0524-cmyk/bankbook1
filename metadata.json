@@ -1,0 +1,6 @@
+{
+  "name": "급여통장 - 어린이 경제 통장",
+  "description": "초등학교 학급 경제 교육을 위한 육일연구소 급여통장 및 육일상점 웹 애플리케이션",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Allow students and teacher to access student documents
+    // Both authenticated users and public access for classroom activities
+    match /{collectionName}/{studentDoc} {
+      allow read, write: if true;
+    }
+  }
+}

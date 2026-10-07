@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "StudentAccount": {
+      "title": "Student Account",
+      "description": "Student economic account record including balance, completed missions, transaction history, and store purchases",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Student display name or number and name"
+        },
+        "ownerUid": {
+          "type": "string",
+          "description": "Firebase Auth UID who created/owns this student record"
+        },
+        "balance": {
+          "type": "number",
+          "description": "Current balance in Won"
+        },
+        "completedMissions": {
+          "type": "object",
+          "description": "Map of mission numbers to completion status"
+        },
+        "history": {
+          "type": "array",
+          "description": "List of transactions"
+        },
+        "purchases": {
+          "type": "array",
+          "description": "List of purchases"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": ["name", "balance"]
+    }
+  },
+  "firestore": {
+    "/students_data_steady-oath-j53bd/{studentId}": {
+      "schema": "StudentAccount",
+      "description": "Collection of student accounts for the classroom economy"
+    }
+  }
+}
