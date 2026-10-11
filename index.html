@@ -448,8 +448,8 @@
 
             document.getElementById('btn-nav-income').classList.remove('bg-emerald-600', 'text-white', 'shadow-md');
             document.getElementById('btn-nav-income').classList.add('bg-white', 'text-emerald-700');
-            document.getElementById('btn-nav-store').classList.remove('bg-emerald-600', 'text-white', 'shadow-md');
-            document.getElementById('btn-nav-store').classList.add('bg-white', 'text-emerald-700');
+            document.getElementById('btn-nav-store').classList.remove('bg-pink-500', 'hover:bg-pink-600', 'bg-emerald-600', 'text-white', 'shadow-md', 'shadow-pink-200');
+            document.getElementById('btn-nav-store').classList.add('bg-white', 'text-pink-600');
             
             const tBtn = document.getElementById('btn-nav-teacher');
             const tmBtn = document.getElementById('btn-nav-teacher-missions');
@@ -463,8 +463,8 @@
                 renderIncomeTab();
             } else if (tabName === 'store') {
                 document.getElementById('tab-store').classList.remove('hidden');
-                document.getElementById('btn-nav-store').classList.remove('bg-white', 'text-emerald-700');
-                document.getElementById('btn-nav-store').classList.add('bg-emerald-600', 'text-white', 'shadow-md');
+                document.getElementById('btn-nav-store').classList.remove('bg-white', 'text-pink-600', 'text-emerald-700');
+                document.getElementById('btn-nav-store').classList.add('bg-pink-500', 'hover:bg-pink-600', 'text-white', 'shadow-md', 'shadow-pink-200');
                 renderStoreTab();
             } else if (tabName === 'teacher') {
                 document.getElementById('tab-teacher').classList.remove('hidden');
@@ -487,7 +487,7 @@
             document.getElementById('total-balance').innerText = userData.balance.toLocaleString() + " 원";
             
             const displayTitle = userData.displayName || (userData.name ? `가계 ${userData.name}` : '내 급여 통장');
-            document.getElementById('bank-book-name').innerHTML = `${displayTitle} <span class="text-xs bg-emerald-500/30 px-2 py-0.5 rounded text-emerald-100 border border-emerald-400/30 font-dodum">정회원</span>`;
+            document.getElementById('bank-book-name').textContent = displayTitle;
 
             const container = document.getElementById('missions-container');
             container.innerHTML = '';
@@ -1217,10 +1217,10 @@
 
         <!-- Navigation Sub-header (Student Mode) -->
         <nav id="student-nav-container" class="bg-emerald-50 py-3 px-4 sm:px-8 border-b border-emerald-100 flex justify-center gap-4">
-            <button id="btn-nav-income" onclick="switchTab('income')" class="font-jua px-6 py-2.5 rounded-2xl shadow-md transition bg-emerald-600 text-white text-base">
+            <button id="btn-nav-income" onclick="switchTab('income')" class="font-jua px-6 py-2.5 rounded-2xl shadow-md transition bg-emerald-600 text-white text-base active:scale-95">
                 <i class="fa-solid fa-flask mr-1"></i> 육일연구소
             </button>
-            <button id="btn-nav-store" onclick="switchTab('store')" class="font-jua px-6 py-2.5 rounded-2xl shadow-md transition bg-white text-emerald-700 text-base">
+            <button id="btn-nav-store" onclick="switchTab('store')" class="font-jua px-6 py-2.5 rounded-2xl shadow-md transition bg-white text-pink-600 hover:bg-pink-50 active:scale-95 active:bg-pink-500 active:text-white text-base">
                 <i class="fa-solid fa-store mr-1"></i> 육일상점
             </button>
         </nav>
@@ -1247,7 +1247,7 @@
                                 <div>
                                     <span class="bg-emerald-900/80 text-emerald-200 border border-emerald-500/40 text-xs font-jua px-3 py-1 rounded-full uppercase tracking-wider inline-block">6-1 육일연구소 급여 통장</span>
                                     <h3 id="bank-book-name" class="font-jua text-2xl mt-1 text-white flex items-center gap-2">
-                                        가계 1번 김수연 <span class="text-xs bg-emerald-500/30 px-2 py-0.5 rounded text-emerald-100 border border-emerald-400/30 font-dodum">정회원</span>
+                                        가계 1번 김수연
                                     </h3>
                                 </div>
                             </div>
