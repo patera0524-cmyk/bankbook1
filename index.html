@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>급여통장 - 어린이 경제 통장</title>
-    <meta name="description" content="초등학교 학급 경제 교육을 위한 육일연구소 급여통장 및 육일상점 웹 애플리케이션" />
+    <meta name="description" content="초등학교 학급 경제 교육을 위한 육일기업 급여통장 및 육일상점 웹 애플리케이션" />
     <meta property="og:title" content="급여통장 - 어린이 경제 통장" />
-    <meta property="og:description" content="초등학교 학급 경제 교육을 위한 육일연구소 급여통장 및 육일상점 웹 애플리케이션" />
+    <meta property="og:description" content="초등학교 학급 경제 교육을 위한 육일기업 급여통장 및 육일상점 웹 애플리케이션" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <script src="https://cdn.tailwindcss.com"></script>
@@ -103,11 +103,13 @@
         const currentProjectId = firebaseConfig.projectId || 'steady-oath-j53bd';
         const currentDatabaseId = firebaseConfig.firestoreDatabaseId || 'ai-studio-909e797d-eb37-4bcb-a0ee-39f245519c30';
         const studentCollectionName = `students_data_${currentProjectId}`;
+        const settingsCollectionName = `settings_data_${currentProjectId}`;
 
         let app, db, auth;
         let currentUser = null;
         let authReady = false;
         let studentDocUnsubscribe = null;
+        let configDocUnsubscribe = null;
 
         let userData = {
             studentKey: '',
@@ -120,18 +122,18 @@
             purchases: []
         };
 
-        // Mission Answers & Rewards
-        let missionAnswers = JSON.parse(localStorage.getItem('gyuyeo_mission_answers')) || {
+        // Default Configs
+        const defaultMissionAnswers = {
             1: "정답1", 2: "정답2", 3: "정답3", 4: "정답4", 5: "정답5",
             6: "정답6", 7: "정답7", 8: "정답8", 9: "정답9", 10: "정답10"
         };
 
-        let missionRewards = JSON.parse(localStorage.getItem('gyuyeo_mission_rewards')) || {
+        const defaultMissionRewards = {
             1: 1000, 2: 1000, 3: 1000, 4: 1000, 5: 1000,
             6: 1000, 7: 1000, 8: 1000, 9: 1000, 10: 1000
         };
 
-        const storeItems = [
+        const defaultStoreItems = [
             { id: 1, name: "자리 선택권(일주일)", price: 10000, icon: "chair" },
             { id: 2, name: "급식 1등권(일주일)", price: 9000, icon: "utensils" },
             { id: 3, name: "청소 면제권(1일)", price: 8000, icon: "broom" },
@@ -143,6 +145,11 @@
             { id: 9, name: "마이쮸", price: 2000, icon: "gift" },
             { id: 10, name: "비타민", price: 1000, icon: "pills" },
         ];
+
+        // Active Dynamic Economy Configs
+        let missionAnswers = JSON.parse(localStorage.getItem('gyuyeo_mission_answers')) || { ...defaultMissionAnswers };
+        let missionRewards = JSON.parse(localStorage.getItem('gyuyeo_mission_rewards')) || { ...defaultMissionRewards };
+        let storeItems = JSON.parse(localStorage.getItem('gyuyeo_store_items')) || [ ...defaultStoreItems ];
 
         function generateStudentKey(number, name) {
             const cleanName = (name || '').trim().replace(/\s+/g, '_');
@@ -174,12 +181,99 @@
                 });
 
                 await tryAuthenticate();
+                await loadGlobalConfigs();
             } catch (e) {
                 console.warn("Firebase Init Notice:", e);
             } finally {
                 const loader = document.getElementById('loading-screen');
                 if (loader) loader.classList.add('hidden');
                 checkSavedSession();
+            }
+        }
+
+        async function loadGlobalConfigs() {
+            await ensureAuth();
+            if (!db) return;
+            try {
+                const configDocRef = doc(db, settingsCollectionName, 'global_economy_config');
+                const docSnap = await getDoc(configDocRef);
+                if (docSnap.exists()) {
+                    applyConfigData(docSnap.data());
+                }
+
+                if (configDocUnsubscribe) {
+                    configDocUnsubscribe();
+                }
+
+                configDocUnsubscribe = onSnapshot(configDocRef, (snap) => {
+                    if (snap.exists()) {
+                        applyConfigData(snap.data());
+                    }
+                }, (err) => {
+                    console.warn("전역 설정 실시간 동기화 상태:", err.message);
+                });
+            } catch (err) {
+                console.warn("전역 경제 설정 불러오기 알림:", err.message);
+            }
+        }
+
+        function applyConfigData(data) {
+            if (!data) return;
+            let changed = false;
+            if (data.missionRewards && typeof data.missionRewards === 'object') {
+                missionRewards = { ...missionRewards, ...data.missionRewards };
+                localStorage.setItem('gyuyeo_mission_rewards', JSON.stringify(missionRewards));
+                changed = true;
+            }
+            if (data.missionAnswers && typeof data.missionAnswers === 'object') {
+                missionAnswers = { ...missionAnswers, ...data.missionAnswers };
+                localStorage.setItem('gyuyeo_mission_answers', JSON.stringify(missionAnswers));
+                changed = true;
+            }
+            if (data.storeItems && Array.isArray(data.storeItems) && data.storeItems.length > 0) {
+                storeItems = data.storeItems;
+                localStorage.setItem('gyuyeo_store_items', JSON.stringify(storeItems));
+                changed = true;
+            }
+
+            if (changed) {
+                const incomeTab = document.getElementById('tab-income');
+                if (incomeTab && !incomeTab.classList.contains('hidden')) {
+                    renderIncomeTab();
+                }
+                const storeTab = document.getElementById('tab-store');
+                if (storeTab && !storeTab.classList.contains('hidden')) {
+                    renderStoreTab();
+                }
+                const teacherMissionsTab = document.getElementById('tab-teacher-missions');
+                if (teacherMissionsTab && !teacherMissionsTab.classList.contains('hidden')) {
+                    renderTeacherMissionsTab();
+                }
+                const teacherStoreTab = document.getElementById('tab-teacher-store');
+                if (teacherStoreTab && !teacherStoreTab.classList.contains('hidden')) {
+                    renderTeacherStoreTab();
+                }
+            }
+        }
+
+        async function syncGlobalConfigsToFirebase() {
+            localStorage.setItem('gyuyeo_mission_rewards', JSON.stringify(missionRewards));
+            localStorage.setItem('gyuyeo_mission_answers', JSON.stringify(missionAnswers));
+            localStorage.setItem('gyuyeo_store_items', JSON.stringify(storeItems));
+
+            await ensureAuth();
+            if (db) {
+                try {
+                    const configDocRef = doc(db, settingsCollectionName, 'global_economy_config');
+                    await setDoc(configDocRef, {
+                        missionRewards: missionRewards,
+                        missionAnswers: missionAnswers,
+                        storeItems: storeItems,
+                        updatedAt: new Date().toISOString()
+                    }, { merge: true });
+                } catch (err) {
+                    console.warn("Firestore 전역 경제 설정 동기화 알림:", err.message);
+                }
             }
         }
 
@@ -358,7 +452,14 @@
         function initNewStudentData() {
             userData.balance = 0;
             userData.completedMissions = {};
-            userData.history = [];
+            userData.history = [
+                {
+                    text: "🎉 육일기업 취직 축하 (통장 개설)",
+                    amount: 0,
+                    time: "통장 개설",
+                    isWelcome: true
+                }
+            ];
             userData.purchases = [];
         }
 
@@ -424,6 +525,8 @@
             document.getElementById('user-display-name').innerText = "👨‍🏫 선생님 대시보드";
             document.getElementById('teacher-nav-btn').classList.remove('hidden');
             document.getElementById('student-nav-container').classList.add('hidden');
+            const teacherNav = document.getElementById('teacher-nav-container');
+            if (teacherNav) teacherNav.classList.add('hidden');
             
             switchTab('teacher');
         }
@@ -433,10 +536,16 @@
                 studentDocUnsubscribe();
                 studentDocUnsubscribe = null;
             }
+            if (configDocUnsubscribe) {
+                configDocUnsubscribe();
+                configDocUnsubscribe = null;
+            }
             localStorage.removeItem('gyuyeo_is_teacher');
             localStorage.removeItem('gyuyeo_student_key');
             localStorage.removeItem('gyuyeo_student_name');
             localStorage.removeItem('gyuyeo_student_number');
+            const teacherNav = document.getElementById('teacher-nav-container');
+            if (teacherNav) teacherNav.classList.add('hidden');
             location.reload();
         };
 
@@ -445,16 +554,39 @@
             document.getElementById('tab-store').classList.add('hidden');
             document.getElementById('tab-teacher').classList.add('hidden');
             document.getElementById('tab-teacher-missions').classList.add('hidden');
+            const tabTStore = document.getElementById('tab-teacher-store');
+            if (tabTStore) tabTStore.classList.add('hidden');
 
             document.getElementById('btn-nav-income').classList.remove('bg-emerald-600', 'text-white', 'shadow-md');
             document.getElementById('btn-nav-income').classList.add('bg-white', 'text-emerald-700');
             document.getElementById('btn-nav-store').classList.remove('bg-pink-500', 'hover:bg-pink-600', 'bg-emerald-600', 'text-white', 'shadow-md', 'shadow-pink-200');
             document.getElementById('btn-nav-store').classList.add('bg-white', 'text-pink-600');
             
-            const tBtn = document.getElementById('btn-nav-teacher');
-            const tmBtn = document.getElementById('btn-nav-teacher-missions');
-            if(tBtn) { tBtn.classList.remove('bg-purple-600', 'text-white', 'shadow-md'); tBtn.classList.add('bg-purple-50', 'text-purple-600'); }
-            if(tmBtn) { tmBtn.classList.remove('bg-purple-600', 'text-white', 'shadow-md'); tmBtn.classList.add('bg-purple-50', 'text-purple-600'); }
+            const btnTDash = document.getElementById('btn-teacher-nav-dashboard');
+            const btnTMiss = document.getElementById('btn-teacher-nav-missions');
+            const btnTStore = document.getElementById('btn-teacher-nav-store');
+
+            if (btnTDash) {
+                if (tabName === 'teacher') {
+                    btnTDash.className = "font-jua px-4 sm:px-5 py-2.5 rounded-2xl shadow transition bg-purple-600 text-white text-sm sm:text-base active:scale-95";
+                } else {
+                    btnTDash.className = "font-jua px-4 sm:px-5 py-2.5 rounded-2xl transition bg-white text-purple-700 hover:bg-purple-100/60 text-sm sm:text-base active:scale-95";
+                }
+            }
+            if (btnTMiss) {
+                if (tabName === 'teacher-missions') {
+                    btnTMiss.className = "font-jua px-4 sm:px-5 py-2.5 rounded-2xl shadow transition bg-purple-600 text-white text-sm sm:text-base active:scale-95";
+                } else {
+                    btnTMiss.className = "font-jua px-4 sm:px-5 py-2.5 rounded-2xl transition bg-white text-purple-700 hover:bg-purple-100/60 text-sm sm:text-base active:scale-95";
+                }
+            }
+            if (btnTStore) {
+                if (tabName === 'teacher-store') {
+                    btnTStore.className = "font-jua px-4 sm:px-5 py-2.5 rounded-2xl shadow transition bg-pink-600 text-white text-sm sm:text-base active:scale-95";
+                } else {
+                    btnTStore.className = "font-jua px-4 sm:px-5 py-2.5 rounded-2xl transition bg-white text-pink-700 hover:bg-pink-100/60 text-sm sm:text-base active:scale-95";
+                }
+            }
 
             if (tabName === 'income') {
                 document.getElementById('tab-income').classList.remove('hidden');
@@ -472,6 +604,9 @@
             } else if (tabName === 'teacher-missions') {
                 document.getElementById('tab-teacher-missions').classList.remove('hidden');
                 renderTeacherMissionsTab();
+            } else if (tabName === 'teacher-store') {
+                if (tabTStore) tabTStore.classList.remove('hidden');
+                renderTeacherStoreTab();
             }
         };
 
@@ -498,24 +633,24 @@
                 
                 const card = document.createElement('div');
                 card.id = `mission-card-${i}`;
-                card.className = `p-3 rounded-2xl border-2 flex flex-col justify-between items-center gap-2 transition-all ${isCompleted ? 'bg-emerald-50 border-emerald-300 shadow-sm' : 'bg-white border-emerald-100 shadow-sm'}`;
+                card.className = `p-3.5 sm:p-4 rounded-2xl border-2 flex flex-col justify-between items-center gap-3 transition-all ${isCompleted ? 'bg-emerald-50 border-emerald-300 shadow-sm' : 'bg-white border-emerald-100 shadow-sm'}`;
                 
                 card.innerHTML = `
                     <div class="flex items-center gap-3 w-full">
-                        <div class="w-10 h-10 rounded-full flex items-center justify-center font-jua text-lg shrink-0 ${isCompleted ? 'bg-emerald-500 text-white' : 'bg-emerald-100 text-emerald-700'}">
+                        <div class="w-11 h-11 rounded-full flex items-center justify-center font-jua text-xl shrink-0 ${isCompleted ? 'bg-emerald-500 text-white shadow-sm' : 'bg-emerald-100 text-emerald-700'}">
                             ${i}
                         </div>
                         <div class="flex-1">
-                            <h4 class="font-jua text-base text-gray-700">${i}번 연구</h4>
-                            <p class="text-xs font-bold text-emerald-600">+${reward.toLocaleString()}원 입금</p>
+                            <h4 class="font-jua text-lg text-gray-800">${i}번 연구</h4>
+                            <p class="text-sm font-bold text-emerald-600">+${reward.toLocaleString()}원 입금</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-2 w-full justify-end">
                         ${isCompleted ? 
-                            `<span class="bg-emerald-200 text-emerald-800 font-jua px-3 py-1.5 rounded-xl text-xs w-full text-center flex items-center justify-center gap-1"><i class="fa-solid fa-circle-check text-emerald-600"></i> 연구 완료!</span>` :
+                            `<span class="bg-emerald-200 text-emerald-800 font-jua px-3.5 py-2 rounded-xl text-xs sm:text-sm w-full text-center flex items-center justify-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-600"></i> 연구 완료!</span>` :
                             `<div class="flex gap-2 w-full">
-                                <input type="text" id="mission-input-${i}" placeholder="정답 입력" onkeydown="if(event.key==='Enter') submitMission(${i})" class="border-2 border-gray-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500 flex-1 font-dodum">
-                                <button id="mission-btn-${i}" onclick="submitMission(${i})" class="btn-bounce-click bg-emerald-600 hover:bg-emerald-700 active:scale-90 text-white font-jua px-3 py-1.5 rounded-xl shadow transition duration-150 text-xs whitespace-nowrap">결과 제출</button>
+                                <input type="text" id="mission-input-${i}" placeholder="정답 입력" onkeydown="if(event.key==='Enter') submitMission(${i})" class="border-2 border-gray-200 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-emerald-500 flex-1 font-dodum">
+                                <button id="mission-btn-${i}" onclick="submitMission(${i})" class="btn-bounce-click bg-emerald-600 hover:bg-emerald-700 active:scale-90 text-white font-jua px-4 py-2 rounded-xl shadow transition duration-150 text-sm whitespace-nowrap">결과 제출</button>
                              </div>`
                         }
                     </div>
@@ -525,10 +660,39 @@
 
             const historyContainer = document.getElementById('history-container');
             historyContainer.innerHTML = '';
-            if (!userData.history || userData.history.length === 0) {
-                historyContainer.innerHTML = `<p class="text-center text-gray-400 py-6">아직 거래 내역이 없어요.</p>`;
+
+            // 1. 최상단: 취직 축하 및 통장 개설 축하 문구 (제일 먼저 보이도록 배치)
+            const welcomeCard = document.createElement('div');
+            welcomeCard.className = "bg-emerald-50 border border-emerald-200 rounded-2xl p-3 sm:p-3.5 mb-3 flex items-center justify-between";
+            welcomeCard.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center text-xl shrink-0">
+                        🎉
+                    </div>
+                    <div>
+                        <p class="font-jua text-emerald-900 text-base leading-tight">육일기업 취직 축하 (통장 개설)</p>
+                        <p class="text-xs text-emerald-600 font-dodum mt-0.5">육일기업 입사 및 첫 급여통장 개설을 축하합니다!</p>
+                    </div>
+                </div>
+                <span class="font-jua text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full whitespace-nowrap">개설 완료</span>
+            `;
+            historyContainer.appendChild(welcomeCard);
+
+            // 2. 일반 입출금 내역 목록
+            const regularHistory = (userData.history || []).filter(item => {
+                const text = item.text || '';
+                return !text.includes('취직 축하') && !text.includes('통장 개설') && !item.isWelcome;
+            });
+
+            if (regularHistory.length === 0) {
+                const emptyNotice = document.createElement('div');
+                emptyNotice.className = "text-center text-gray-400 py-6 text-xs font-dodum";
+                emptyNotice.textContent = "연구 과제를 해결하거나 상점을 이용하면 실시간 입출금 내역이 이곳에 쌓여요!";
+                historyContainer.appendChild(emptyNotice);
             } else {
-                [...userData.history].reverse().forEach(item => {
+                const transactionsList = document.createElement('div');
+                transactionsList.className = "divide-y divide-gray-100";
+                [...regularHistory].reverse().forEach(item => {
                     let displayText = item.text || '';
                     const match = displayText.match(/(?:미션\s*(\d+)번[^\d]*보상|(\d+)번\s*연구[^\d]*급여)/);
                     if (match) {
@@ -536,7 +700,7 @@
                         displayText = `${num}번 연구 성공 급여`;
                     }
                     const el = document.createElement('div');
-                    el.className = "flex justify-between items-center border-b border-gray-100 py-3 text-sm";
+                    el.className = "flex justify-between items-center py-3 text-sm";
                     el.innerHTML = `
                         <div>
                             <p class="font-bold text-gray-700">${displayText}</p>
@@ -546,8 +710,9 @@
                             ${item.amount > 0 ? '+' : ''}${item.amount !== 0 ? item.amount.toLocaleString() + '원' : ''}
                         </span>
                     `;
-                    historyContainer.appendChild(el);
+                    transactionsList.appendChild(el);
                 });
+                historyContainer.appendChild(transactionsList);
             }
         }
 
@@ -646,7 +811,7 @@
         }
 
         window.buyStoreItem = async function(itemId) {
-            const item = storeItems.find(i => i.id === itemId);
+            const item = storeItems.find(i => i.id == itemId);
             if (!item) return;
 
             if (userData.balance < item.price) {
@@ -683,7 +848,9 @@
                         const data = JSON.parse(localStorage.getItem(key));
                         if (data && (data.studentKey || data.name)) {
                             const k = data.studentKey || generateStudentKey(data.studentNumber, data.name);
-                            studentsMap[k] = { ...data, studentKey: k };
+                            if (k && k !== 'name_') {
+                                studentsMap[k] = { ...data, studentKey: k };
+                            }
                         }
                     } catch (e) {}
                 }
@@ -697,8 +864,11 @@
                     const querySnapshot = await getDocs(q);
                     querySnapshot.forEach((docSnap) => {
                         const data = docSnap.data();
+                        if (!data || (!data.name && !data.studentKey) || docSnap.id.startsWith('config_') || docSnap.id === 'global_economy_config') {
+                            return;
+                        }
                         const k = data.studentKey || generateStudentKey(data.studentNumber, data.name);
-                        if (k) {
+                        if (k && k !== 'name_') {
                             studentsMap[k] = { ...(studentsMap[k] || {}), ...data, studentKey: k };
                         }
                     });
@@ -1003,45 +1173,372 @@
             );
         };
 
+        const storeIconOptions = [
+            { id: 'chair', label: '🪑 자리 선택권' },
+            { id: 'utensils', label: '🍱 급식 1등권' },
+            { id: 'broom', label: '🧹 청소 면제권' },
+            { id: 'bowl-rice', label: '🍚 밥그릇/식사' },
+            { id: 'cookie', label: '🍪 초코파이/쿠키' },
+            { id: 'eraser', label: '✏️ 지우개/학용품' },
+            { id: 'candy-cane', label: '🍭 젤리/사탕' },
+            { id: 'cookie-bite', label: '🧁 과자/스낵' },
+            { id: 'gift', label: '🎁 선물/마이쮸' },
+            { id: 'pills', label: '💊 비타민/약' },
+            { id: 'star', label: '⭐ 칭찬/특권' },
+            { id: 'ticket', label: '🎟️ 쿠폰/티켓' },
+            { id: 'award', label: '🏆 상장/면제권' },
+            { id: 'pen-ruler', label: '📐 문구류' },
+            { id: 'book', label: '📚 도서/책' },
+            { id: 'gamepad', label: '🎮 자유시간' },
+            { id: 'heart', label: '❤️ 하트/스티커' },
+            { id: 'music', label: '🎵 노래/음악' }
+        ];
+
         function renderTeacherMissionsTab() {
             const container = document.getElementById('teacher-missions-list');
+            if (!container) return;
             container.innerHTML = '';
 
             for (let i = 1; i <= 10; i++) {
                 const currentAns = missionAnswers[i] || `정답${i}`;
-                const currentReward = missionRewards[i] || 1000;
+                const currentReward = missionRewards[i] !== undefined ? missionRewards[i] : 1000;
                 const div = document.createElement('div');
-                div.className = "flex flex-col sm:flex-row justify-between items-center bg-purple-50/50 p-4 rounded-2xl border border-purple-100 gap-3";
+                div.className = "flex flex-col lg:flex-row justify-between items-start lg:items-center bg-purple-50/60 p-4 sm:p-5 rounded-3xl border border-purple-100 gap-4 shadow-sm hover:shadow transition";
                 div.innerHTML = `
-                    <div class="flex items-center gap-3 w-full sm:w-auto">
-                        <span class="w-10 h-10 bg-purple-600 text-white rounded-xl flex items-center justify-center font-jua">${i}</span>
+                    <div class="flex items-center gap-3.5 w-full lg:w-auto">
+                        <div class="w-12 h-12 bg-purple-600 text-white rounded-2xl flex items-center justify-center font-jua text-xl shadow-md shrink-0">
+                            ${i}
+                        </div>
                         <div>
-                            <h4 class="font-jua text-gray-800">${i}번 연구 설정</h4>
-                            <p class="text-xs text-gray-500">정답 및 급여 입금액 수정</p>
+                            <div class="flex items-center gap-2">
+                                <h4 class="font-jua text-lg text-gray-800">${i}번 연구</h4>
+                                <span class="text-xs font-bold text-emerald-600 bg-emerald-100/80 px-2 py-0.5 rounded-lg font-dodum">
+                                    +<span id="teacher-reward-preview-${i}">${currentReward.toLocaleString()}</span>원 지급
+                                </span>
+                            </div>
+                            <p class="text-xs text-gray-400 font-dodum mt-0.5">성공 시 통장 입금액과 정답을 설정합니다.</p>
                         </div>
                     </div>
-                    <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                        <input type="number" id="teacher-reward-${i}" value="${currentReward}" placeholder="급여" class="border-2 border-purple-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-purple-500 font-dodum w-full sm:w-28">
-                        <input type="text" id="teacher-ans-${i}" value="${currentAns}" placeholder="정답 입력" class="border-2 border-purple-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-purple-500 font-dodum w-full sm:w-48">
-                        <button onclick="saveMissionConfig(${i})" class="bg-purple-600 hover:bg-purple-700 text-white font-jua px-4 py-2 rounded-xl text-sm transition whitespace-nowrap">저장</button>
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
+                        <div class="flex items-center gap-1.5 bg-white border-2 border-purple-200 rounded-2xl px-3 py-1.5 shadow-inner">
+                            <span class="text-xs text-purple-600 font-jua whitespace-nowrap">급여:</span>
+                            <input type="number" id="teacher-reward-${i}" value="${currentReward}" step="100" min="0" oninput="updateRewardPreview(${i})" class="w-24 text-right font-jua text-emerald-700 text-sm focus:outline-none">
+                            <span class="text-xs text-gray-500 font-dodum">원</span>
+                        </div>
+                        <div class="flex items-center gap-1.5 bg-white border-2 border-purple-200 rounded-2xl px-3 py-1.5 shadow-inner flex-1 sm:flex-initial">
+                            <span class="text-xs text-purple-600 font-jua whitespace-nowrap">정답:</span>
+                            <input type="text" id="teacher-ans-${i}" value="${currentAns}" placeholder="정답 입력" class="w-full sm:w-36 text-sm font-dodum text-gray-800 focus:outline-none">
+                        </div>
+                        <button onclick="saveMissionConfig(${i})" class="bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-jua px-4 py-2 rounded-2xl text-sm transition shadow whitespace-nowrap flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-check"></i> 저장
+                        </button>
                     </div>
                 `;
                 container.appendChild(div);
             }
         }
 
-        window.saveMissionConfig = function(i) {
-            const ansVal = document.getElementById(`teacher-ans-${i}`).value.trim();
-            const rewardVal = parseInt(document.getElementById(`teacher-reward-${i}`).value) || 1000;
+        window.updateRewardPreview = function(i) {
+            const inputEl = document.getElementById(`teacher-reward-${i}`);
+            const previewEl = document.getElementById(`teacher-reward-preview-${i}`);
+            if (inputEl && previewEl) {
+                const val = parseInt(inputEl.value) || 0;
+                previewEl.innerText = val.toLocaleString();
+            }
+        };
+
+        window.saveMissionConfig = async function(i) {
+            const ansInput = document.getElementById(`teacher-ans-${i}`);
+            const rewardInput = document.getElementById(`teacher-reward-${i}`);
+            if (!ansInput || !rewardInput) return;
+
+            const ansVal = ansInput.value.trim();
+            const rewardVal = parseInt(rewardInput.value);
+
             if (!ansVal) {
-                showCustomAlert("정답을 입력해주세요!");
+                showCustomAlert("연구 정답을 입력해주세요!");
                 return;
             }
+            if (isNaN(rewardVal) || rewardVal < 0) {
+                showCustomAlert("연구 급여 금액을 올바르게 입력해주세요!");
+                return;
+            }
+
             missionAnswers[i] = ansVal;
             missionRewards[i] = rewardVal;
-            localStorage.setItem('gyuyeo_mission_answers', JSON.stringify(missionAnswers));
-            localStorage.setItem('gyuyeo_mission_rewards', JSON.stringify(missionRewards));
-            showCustomAlert(`${i}번 연구 설정(입금: ${rewardVal.toLocaleString()}원, 정답: ${ansVal})이 저장되었습니다!`);
+
+            await syncGlobalConfigsToFirebase();
+            showCustomAlert(`✅ ${i}번 연구 설정이 저장되었습니다!\n(지급 급여: ${rewardVal.toLocaleString()}원 / 정답: ${ansVal})`);
+        };
+
+        window.saveAllMissionConfigs = async function() {
+            for (let i = 1; i <= 10; i++) {
+                const ansInput = document.getElementById(`teacher-ans-${i}`);
+                const rewardInput = document.getElementById(`teacher-reward-${i}`);
+                if (ansInput && rewardInput) {
+                    const ansVal = ansInput.value.trim();
+                    const rewardVal = parseInt(rewardInput.value);
+                    if (ansVal) missionAnswers[i] = ansVal;
+                    if (!isNaN(rewardVal) && rewardVal >= 0) missionRewards[i] = rewardVal;
+                }
+            }
+
+            await syncGlobalConfigsToFirebase();
+            renderTeacherMissionsTab();
+            showCustomAlert("🎉 1~10번 모든 연구의 급여 금액과 정답이 성공적으로 저장되었습니다!");
+        };
+
+        window.applyBatchMissionReward = async function() {
+            const batchInput = document.getElementById('batch-reward-input');
+            if (!batchInput) return;
+            const amount = parseInt(batchInput.value);
+            if (isNaN(amount) || amount < 0) {
+                showCustomAlert("일괄 적용할 급여 금액을 올바르게 입력해주세요!");
+                return;
+            }
+
+            for (let i = 1; i <= 10; i++) {
+                missionRewards[i] = amount;
+                const inputEl = document.getElementById(`teacher-reward-${i}`);
+                if (inputEl) inputEl.value = amount;
+                const previewEl = document.getElementById(`teacher-reward-preview-${i}`);
+                if (previewEl) previewEl.innerText = amount.toLocaleString();
+            }
+
+            await syncGlobalConfigsToFirebase();
+            showCustomAlert(`1~10번 모든 연구의 급여가 ${amount.toLocaleString()}원으로 일괄 변경 및 저장되었습니다!`);
+        };
+
+        window.resetMissionConfigsDefaultConfirm = function() {
+            showCustomConfirm(
+                "연구 급여 및 정답 기본값 복원",
+                "모든 연구 급여를 기본 <strong>1,000원</strong>으로, 정답을 기본값(<strong>정답1 ~ 정답10</strong>)으로 복원하시겠습니까?",
+                "기본값 복원",
+                "bg-amber-500 hover:bg-amber-600",
+                '<i class="fa-solid fa-rotate-left"></i>',
+                async () => {
+                    missionAnswers = { ...defaultMissionAnswers };
+                    missionRewards = { ...defaultMissionRewards };
+                    await syncGlobalConfigsToFirebase();
+                    renderTeacherMissionsTab();
+                    showCustomAlert("모든 연구의 급여와 정답이 기본값으로 복원되었습니다.");
+                }
+            );
+        };
+
+        // ================= 육일상점 관리 (물건 및 가격 조정) =================
+        function renderTeacherStoreTab() {
+            const countEl = document.getElementById('teacher-store-total-count');
+            if (countEl) countEl.innerText = storeItems.length;
+
+            const listContainer = document.getElementById('teacher-store-items-list');
+            if (!listContainer) return;
+            listContainer.innerHTML = '';
+
+            if (storeItems.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="text-center py-12 bg-pink-50/50 rounded-3xl border border-pink-100">
+                        <i class="fa-solid fa-box-open text-4xl text-pink-300 mb-2"></i>
+                        <p class="font-jua text-gray-500">등록된 상점 물건이 없습니다.</p>
+                        <button onclick="toggleNewItemForm()" class="mt-3 bg-pink-600 hover:bg-pink-700 text-white font-jua px-4 py-2 rounded-xl text-sm transition">
+                            + 첫 상품 추가하기
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            storeItems.forEach((item, index) => {
+                const card = document.createElement('div');
+                card.id = `teacher-store-item-card-${item.id}`;
+                card.className = "bg-white border-2 border-pink-100 rounded-3xl p-4 sm:p-5 shadow-sm hover:shadow-md transition flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4";
+
+                let iconSelectOptionsHtml = storeIconOptions.map(opt => `
+                    <option value="${opt.id}" ${item.icon === opt.id ? 'selected' : ''}>${opt.label}</option>
+                `).join('');
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-3.5 flex-1">
+                        <div class="w-12 h-12 bg-pink-100 text-pink-600 rounded-2xl flex items-center justify-center text-2xl shadow-inner shrink-0" id="store-item-icon-preview-${item.id}">
+                            <i class="fa-solid fa-${item.icon || 'gift'}"></i>
+                        </div>
+                        <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[11px] font-jua text-gray-500 mb-0.5">상품명</label>
+                                <input type="text" id="store-item-name-${item.id}" value="${item.name || ''}" placeholder="상품명 입력" class="w-full border-2 border-pink-100 focus:border-pink-500 rounded-xl px-3 py-1.5 text-sm font-jua text-gray-800 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-jua text-gray-500 mb-0.5">아이콘 모양</label>
+                                <select id="store-item-icon-${item.id}" onchange="changeStoreItemIconPreview(${item.id})" class="w-full border-2 border-pink-100 focus:border-pink-500 rounded-xl px-2.5 py-1.5 text-xs font-dodum text-gray-700 bg-white focus:outline-none">
+                                    ${iconSelectOptionsHtml}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between md:justify-end gap-3 pt-2 md:pt-0 border-t md:border-t-0 border-pink-50">
+                        <div class="flex items-center gap-1 bg-pink-50/80 border-2 border-pink-200 rounded-2xl px-3 py-1.5 shadow-inner">
+                            <span class="text-xs text-pink-600 font-jua">가격:</span>
+                            <input type="number" id="store-item-price-${item.id}" value="${item.price || 0}" step="500" min="0" class="w-24 text-right font-jua text-pink-700 text-sm focus:outline-none bg-transparent">
+                            <span class="text-xs text-pink-600 font-jua">원</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="saveStoreItem(${item.id})" class="bg-pink-600 hover:bg-pink-700 active:scale-95 text-white font-jua px-3.5 py-2 rounded-2xl text-xs sm:text-sm transition shadow flex items-center gap-1">
+                                <i class="fa-solid fa-check"></i> 저장
+                            </button>
+                            <button onclick="deleteStoreItem(${item.id})" class="bg-red-50 hover:bg-red-100 active:scale-95 text-red-500 font-jua px-3 py-2 rounded-2xl text-xs sm:text-sm transition flex items-center gap-1">
+                                <i class="fa-solid fa-trash-can"></i> 삭제
+                            </button>
+                        </div>
+                    </div>
+                `;
+                listContainer.appendChild(card);
+            });
+        }
+
+        window.changeStoreItemIconPreview = function(id) {
+            const selectEl = document.getElementById(`store-item-icon-${id}`);
+            const previewEl = document.getElementById(`store-item-icon-preview-${id}`);
+            if (selectEl && previewEl) {
+                previewEl.innerHTML = `<i class="fa-solid fa-${selectEl.value}"></i>`;
+            }
+        };
+
+        window.toggleNewItemForm = function() {
+            const form = document.getElementById('new-item-form-container');
+            const btn = document.getElementById('btn-toggle-new-item');
+            if (!form) return;
+            const isHidden = form.classList.contains('hidden');
+            if (isHidden) {
+                form.classList.remove('hidden');
+                if (btn) btn.innerHTML = `<i class="fa-solid fa-xmark"></i> 입력창 닫기`;
+                document.getElementById('new-item-name').focus();
+            } else {
+                form.classList.add('hidden');
+                if (btn) btn.innerHTML = `<i class="fa-solid fa-plus"></i> 새 상품 추가하기`;
+            }
+        };
+
+        window.addNewStoreItem = async function() {
+            const nameInput = document.getElementById('new-item-name');
+            const priceInput = document.getElementById('new-item-price');
+            const iconSelect = document.getElementById('new-item-icon');
+
+            if (!nameInput || !priceInput) return;
+
+            const nameVal = nameInput.value.trim();
+            const priceVal = parseInt(priceInput.value);
+            const iconVal = iconSelect ? iconSelect.value : 'gift';
+
+            if (!nameVal) {
+                showCustomAlert("상품명을 입력해주세요!");
+                return;
+            }
+            if (isNaN(priceVal) || priceVal < 0) {
+                showCustomAlert("상품 가격을 올바르게 입력해주세요 (0원 이상)!");
+                return;
+            }
+
+            const newItem = {
+                id: Date.now(),
+                name: nameVal,
+                price: priceVal,
+                icon: iconVal
+            };
+
+            storeItems.push(newItem);
+            await syncGlobalConfigsToFirebase();
+
+            nameInput.value = '';
+            priceInput.value = '';
+            window.toggleNewItemForm();
+            renderTeacherStoreTab();
+            showCustomAlert(`🛍️ [${nameVal}] (${priceVal.toLocaleString()}원) 상품이 상점에 성공적으로 추가되었습니다!`);
+        };
+
+        window.saveStoreItem = async function(id) {
+            const nameInput = document.getElementById(`store-item-name-${id}`);
+            const priceInput = document.getElementById(`store-item-price-${id}`);
+            const iconSelect = document.getElementById(`store-item-icon-${id}`);
+
+            if (!nameInput || !priceInput) return;
+
+            const nameVal = nameInput.value.trim();
+            const priceVal = parseInt(priceInput.value);
+            const iconVal = iconSelect ? iconSelect.value : 'gift';
+
+            if (!nameVal) {
+                showCustomAlert("상품명을 입력해주세요!");
+                return;
+            }
+            if (isNaN(priceVal) || priceVal < 0) {
+                showCustomAlert("상품 가격을 올바르게 입력해주세요!");
+                return;
+            }
+
+            const itemIndex = storeItems.findIndex(i => i.id == id);
+            if (itemIndex === -1) return;
+
+            storeItems[itemIndex].name = nameVal;
+            storeItems[itemIndex].price = priceVal;
+            storeItems[itemIndex].icon = iconVal;
+
+            await syncGlobalConfigsToFirebase();
+            renderTeacherStoreTab();
+            showCustomAlert(`✅ [${nameVal}] (${priceVal.toLocaleString()}원) 상품 정보가 저장되었습니다!`);
+        };
+
+        window.deleteStoreItem = function(id) {
+            const item = storeItems.find(i => i.id == id);
+            if (!item) return;
+
+            showCustomConfirm(
+                "상점 물건 삭제",
+                `상점에서 <strong>[${item.name}]</strong> 상품을 완전히 삭제하시겠습니까?<br><span class="text-xs text-red-500 font-bold mt-1 block">삭제 후 학생들이 더 이상 상점에서 구매할 수 없게 됩니다.</span>`,
+                "삭제 실행",
+                "bg-red-500 hover:bg-red-600",
+                '<i class="fa-solid fa-trash-can"></i>',
+                async () => {
+                    storeItems = storeItems.filter(i => i.id != id);
+                    await syncGlobalConfigsToFirebase();
+                    renderTeacherStoreTab();
+                    showCustomAlert(`[${item.name}] 상품이 상점에서 삭제되었습니다.`);
+                }
+            );
+        };
+
+        window.saveAllStoreItems = async function() {
+            storeItems.forEach(item => {
+                const nameInput = document.getElementById(`store-item-name-${item.id}`);
+                const priceInput = document.getElementById(`store-item-price-${item.id}`);
+                const iconSelect = document.getElementById(`store-item-icon-${item.id}`);
+                if (nameInput) item.name = nameInput.value.trim() || item.name;
+                if (priceInput) {
+                    const p = parseInt(priceInput.value);
+                    if (!isNaN(p) && p >= 0) item.price = p;
+                }
+                if (iconSelect) item.icon = iconSelect.value;
+            });
+
+            await syncGlobalConfigsToFirebase();
+            renderTeacherStoreTab();
+            showCustomAlert("🎉 모든 상점 물건 및 가격이 성공적으로 저장되었습니다!");
+        };
+
+        window.resetDefaultStoreItemsConfirm = function() {
+            showCustomConfirm(
+                "상점 상품 기본 10종 복원",
+                "현재 상점 목록을 기본 10종 상품(자리 선택권, 급식 1등권, 초코파이 등)으로 복원하시겠습니까?",
+                "기본 상품 복원",
+                "bg-amber-500 hover:bg-amber-600",
+                '<i class="fa-solid fa-rotate-left"></i>',
+                async () => {
+                    storeItems = [ ...defaultStoreItems ];
+                    await syncGlobalConfigsToFirebase();
+                    renderTeacherStoreTab();
+                    showCustomAlert("상점 상품이 기본 10종으로 복원되었습니다.");
+                }
+            );
         };
 
         window.showCustomAlert = function(msg) {
@@ -1096,11 +1593,11 @@
                 <div class="grid grid-cols-3 gap-2">
                     <div>
                         <label class="block text-sm font-jua text-gray-600 mb-1">번호</label>
-                        <input type="number" id="student-number" placeholder="예: 5" class="w-full border-2 border-gray-200 rounded-2xl px-3 py-3 focus:outline-none focus:border-emerald-500 font-dodum">
+                        <input type="number" id="student-number" class="w-full border-2 border-gray-200 rounded-2xl px-3 py-3 focus:outline-none focus:border-emerald-500 font-dodum">
                     </div>
                     <div class="col-span-2">
                         <label class="block text-sm font-jua text-gray-600 mb-1">이름</label>
-                        <input type="text" id="student-name" placeholder="예: 김수연" class="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-emerald-500 font-dodum" required>
+                        <input type="text" id="student-name" class="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-emerald-500 font-dodum" required>
                     </div>
                 </div>
                 <p class="text-xs text-emerald-600 font-dodum">💡 번호와 이름이 일치하면 다른 기기에서도 동일한 급여 통장을 열 수 있습니다.</p>
@@ -1218,10 +1715,17 @@
         <!-- Navigation Sub-header (Student Mode) -->
         <nav id="student-nav-container" class="bg-emerald-50 py-3 px-4 sm:px-8 border-b border-emerald-100 flex justify-center gap-4">
             <button id="btn-nav-income" onclick="switchTab('income')" class="font-jua px-6 py-2.5 rounded-2xl shadow-md transition bg-emerald-600 text-white text-base active:scale-95">
-                <i class="fa-solid fa-flask mr-1"></i> 육일연구소
+                <i class="fa-solid fa-briefcase mr-1"></i> 육일기업
             </button>
             <button id="btn-nav-store" onclick="switchTab('store')" class="font-jua px-6 py-2.5 rounded-2xl shadow-md transition bg-white text-pink-600 hover:bg-pink-50 active:scale-95 active:bg-pink-500 active:text-white text-base">
                 <i class="fa-solid fa-store mr-1"></i> 육일상점
+            </button>
+        </nav>
+
+        <!-- Navigation Sub-header (Teacher Mode) -->
+        <nav id="teacher-nav-container" class="hidden">
+            <button id="btn-teacher-nav-dashboard" onclick="switchTab('teacher')" class="hidden">
+                <i class="fa-solid fa-chart-pie mr-1.5"></i> 학급 경제 대시보드
             </button>
         </nav>
 
@@ -1245,7 +1749,7 @@
                                     <i class="fa-solid fa-landmark"></i>
                                 </div>
                                 <div>
-                                    <span class="bg-emerald-900/80 text-emerald-200 border border-emerald-500/40 text-xs font-jua px-3 py-1 rounded-full uppercase tracking-wider inline-block">6-1 육일연구소 급여 통장</span>
+                                    <span class="bg-emerald-900/80 text-emerald-200 border border-emerald-500/40 text-xs font-jua px-3 py-1 rounded-full uppercase tracking-wider inline-block">6-1 육일기업 급여 통장</span>
                                     <h3 id="bank-book-name" class="font-jua text-2xl mt-1 text-white flex items-center gap-2">
                                         가계 1번 김수연
                                     </h3>
@@ -1286,7 +1790,7 @@
                             <i class="fa-solid fa-clock-rotate-left text-emerald-600"></i> 최근 통장 입출금 내역
                         </h3>
                         <p class="text-xs text-gray-500 mb-4 font-dodum">내 급여 통장의 모든 소득과 소비 내역입니다.</p>
-                        <div id="history-container" class="divide-y divide-gray-100 overflow-y-auto flex-1 pr-2 max-h-[600px]"></div>
+                        <div id="history-container" class="overflow-y-auto flex-1 pr-2 max-h-[600px]"></div>
                     </div>
                 </div>
             </div>
@@ -1309,11 +1813,21 @@
 
             <!-- TAB: TEACHER DASHBOARD -->
             <div id="tab-teacher" class="space-y-6 hidden">
-                <div class="flex justify-between items-center bg-purple-50 p-4 rounded-2xl border border-purple-200">
-                    <h3 class="font-jua text-lg text-purple-700"><i class="fa-solid fa-gear mr-1"></i> 교사 관리 메뉴</h3>
-                    <button onclick="switchTab('teacher-missions')" class="bg-purple-600 hover:bg-purple-700 text-white font-jua px-4 py-2 rounded-xl text-sm transition shadow">
-                        <i class="fa-solid fa-pen-to-square mr-1"></i> 10가지 연구 정답 및 급여 설정 화면
-                    </button>
+                <div class="flex flex-col sm:flex-row justify-between items-center bg-purple-50 p-4 sm:p-5 rounded-3xl border border-purple-200 gap-3 shadow-sm">
+                    <div>
+                        <h3 class="font-jua text-lg text-purple-700 flex items-center gap-2">
+                            <i class="fa-solid fa-sliders"></i> 교사 경제 규칙 관리 메뉴
+                        </h3>
+                        <p class="text-xs text-purple-600 font-dodum mt-0.5">미션별 급여 금액과 육일상점의 물건 및 가격을 바로 조정할 수 있습니다.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+                        <button onclick="switchTab('teacher-missions')" class="flex-1 sm:flex-initial bg-purple-600 hover:bg-purple-700 text-white font-jua px-4 py-2.5 rounded-2xl text-sm transition shadow flex items-center justify-center gap-1.5 active:scale-95">
+                            <i class="fa-solid fa-coins"></i> 미션별 급여·정답 조정
+                        </button>
+                        <button onclick="switchTab('teacher-store')" class="flex-1 sm:flex-initial bg-pink-600 hover:bg-pink-700 text-white font-jua px-4 py-2.5 rounded-2xl text-sm transition shadow flex items-center justify-center gap-1.5 active:scale-95">
+                            <i class="fa-solid fa-store"></i> 상점 물건·가격 조정
+                        </button>
+                    </div>
                 </div>
 
                 <div class="bg-gradient-to-br from-emerald-600 via-teal-700 to-green-700 rounded-[32px] p-6 sm:p-8 text-white shadow-2xl border border-emerald-400/30 relative overflow-hidden">
@@ -1420,17 +1934,142 @@
             <!-- TAB: TEACHER MISSIONS SETTING -->
             <div id="tab-teacher-missions" class="space-y-6 hidden">
                 <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-purple-100 space-y-6">
-                    <div class="flex justify-between items-center border-b border-gray-100 pb-4">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-100 pb-4 gap-3">
                         <div>
-                            <h3 class="font-jua text-2xl text-purple-700"><i class="fa-solid fa-pen-to-square mr-2"></i> 1~10번 연구 정답 및 급여 설정</h3>
-                            <p class="text-sm text-gray-500 mt-1">학생들이 제출해야 하는 연구별 급여 입금액과 정답을 직접 설정할 수 있습니다.</p>
+                            <div class="flex items-center gap-2">
+                                <span class="bg-purple-100 text-purple-700 text-xs font-jua px-2.5 py-1 rounded-full">연구 급여 관리</span>
+                                <h3 class="font-jua text-2xl text-purple-700 flex items-center gap-2">
+                                    <i class="fa-solid fa-flask"></i> 미션별 급여 및 정답 조정
+                                </h3>
+                            </div>
+                            <p class="text-sm text-gray-500 mt-1 font-dodum">학생들이 각 연구(미션)를 완료했을 때 지급받는 급여 금액과 정답을 자유롭게 설정할 수 있습니다.</p>
                         </div>
-                        <button onclick="switchTab('teacher')" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-jua px-4 py-2 rounded-xl text-sm transition">
+                        <button onclick="switchTab('teacher')" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-jua px-4 py-2 rounded-xl text-sm transition whitespace-nowrap">
                             ← 대시보드로 돌아가기
                         </button>
                     </div>
 
+                    <!-- 연구 급여 일괄 조작 툴바 -->
+                    <div class="bg-purple-50/60 border border-purple-200/80 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                            <span class="text-xs text-purple-800 font-jua whitespace-nowrap"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> 급여 일괄 설정:</span>
+                            <div class="flex items-center gap-1 bg-white border-2 border-purple-200 rounded-xl px-2.5 py-1">
+                                <input type="number" id="batch-reward-input" value="1000" step="500" min="0" class="w-20 text-right font-jua text-emerald-700 text-sm focus:outline-none">
+                                <span class="text-xs text-gray-500 font-dodum">원</span>
+                            </div>
+                            <button onclick="applyBatchMissionReward()" class="bg-purple-600 hover:bg-purple-700 text-white font-jua px-3.5 py-1.5 rounded-xl text-xs transition shadow active:scale-95 whitespace-nowrap">
+                                1~10번 전체 일괄 적용
+                            </button>
+                        </div>
+                        <div class="flex flex-wrap gap-2 w-full md:w-auto justify-end">
+                            <button onclick="saveAllMissionConfigs()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-jua px-4 py-2 rounded-xl text-sm transition shadow flex items-center gap-1.5 active:scale-95">
+                                <i class="fa-solid fa-floppy-disk"></i> 전체 일괄 저장
+                            </button>
+                            <button onclick="resetMissionConfigsDefaultConfirm()" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-jua px-3 py-2 rounded-xl text-xs transition flex items-center gap-1 active:scale-95">
+                                <i class="fa-solid fa-rotate-left"></i> 기본값 복원
+                            </button>
+                        </div>
+                    </div>
+
                     <div id="teacher-missions-list" class="space-y-4"></div>
+                </div>
+            </div>
+
+            <!-- TAB: TEACHER STORE SETTING -->
+            <div id="tab-teacher-store" class="space-y-6 hidden">
+                <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-pink-100 space-y-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-100 pb-4 gap-3">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="bg-pink-100 text-pink-700 text-xs font-jua px-2.5 py-1 rounded-full">육일상점 관리</span>
+                                <h3 class="font-jua text-2xl text-pink-600 flex items-center gap-2">
+                                    <i class="fa-solid fa-store"></i> 상점 물건 및 가격 조정
+                                </h3>
+                            </div>
+                            <p class="text-sm text-gray-500 mt-1 font-dodum">학생들이 육일상점에서 구매할 수 있는 물품명과 판매 가격을 자유롭게 수정하고 새 물건을 추가할 수 있습니다.</p>
+                        </div>
+                        <button onclick="switchTab('teacher')" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-jua px-4 py-2 rounded-xl text-sm transition whitespace-nowrap">
+                            ← 대시보드로 돌아가기
+                        </button>
+                    </div>
+
+                    <!-- 상점 상품 관리 상단 툴바 -->
+                    <div class="bg-pink-50/60 border border-pink-200/80 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-pink-500 text-white flex items-center justify-center text-lg shadow-sm">
+                                <i class="fa-solid fa-tags"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-jua text-gray-800">현재 판매 상품 목록</h4>
+                                <p class="text-xs text-gray-500 font-dodum">총 <strong id="teacher-store-total-count" class="text-pink-600 font-jua">0</strong>개의 물품이 등록되어 있습니다.</p>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2 w-full md:w-auto">
+                            <button onclick="toggleNewItemForm()" id="btn-toggle-new-item" class="bg-pink-600 hover:bg-pink-700 text-white font-jua px-4 py-2 rounded-xl text-sm transition shadow flex items-center gap-1.5 active:scale-95">
+                                <i class="fa-solid fa-plus"></i> 새 상품 추가하기
+                            </button>
+                            <button onclick="saveAllStoreItems()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-jua px-4 py-2 rounded-xl text-sm transition shadow flex items-center gap-1.5 active:scale-95">
+                                <i class="fa-solid fa-floppy-disk"></i> 전체 일괄 저장
+                            </button>
+                            <button onclick="resetDefaultStoreItemsConfirm()" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-jua px-3 py-2 rounded-xl text-xs transition flex items-center gap-1 active:scale-95">
+                                <i class="fa-solid fa-rotate-left"></i> 기본 10종 복원
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 새 상품 등록 인라인 폼 (토글 가능) -->
+                    <div id="new-item-form-container" class="hidden bg-gradient-to-br from-pink-50 to-rose-50 border-2 border-pink-300 rounded-2xl p-5 shadow-sm space-y-4">
+                        <div class="flex justify-between items-center">
+                            <h4 class="font-jua text-pink-700 text-lg flex items-center gap-2">
+                                <i class="fa-solid fa-circle-plus"></i> 새로운 상점 물건 등록
+                            </h4>
+                            <button onclick="toggleNewItemForm()" class="text-gray-400 hover:text-gray-600 text-sm">
+                                <i class="fa-solid fa-xmark"></i> 닫기
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-xs font-jua text-gray-700 mb-1">물품 이름 *</label>
+                                <input type="text" id="new-item-name" placeholder="예: 숙제 1회 면제권, 간식 박스" class="w-full border-2 border-pink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-500 font-dodum bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-jua text-gray-700 mb-1">판매 가격 (원) *</label>
+                                <input type="number" id="new-item-price" step="500" min="0" placeholder="예: 5000" class="w-full border-2 border-pink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-500 font-dodum bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-jua text-gray-700 mb-1">아이콘 선택</label>
+                                <select id="new-item-icon" class="w-full border-2 border-pink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-500 font-dodum bg-white">
+                                    <option value="chair">🪑 자리 선택권 (chair)</option>
+                                    <option value="utensils">🍱 급식 1등권 (utensils)</option>
+                                    <option value="broom">🧹 청소 면제권 (broom)</option>
+                                    <option value="bowl-rice">🍚 밥그릇/식사 (bowl-rice)</option>
+                                    <option value="cookie">🍪 초코파이/쿠키 (cookie)</option>
+                                    <option value="eraser">✏️ 지우개/학용품 (eraser)</option>
+                                    <option value="candy-cane">🍭 젤리/사탕 (candy-cane)</option>
+                                    <option value="cookie-bite">🧁 과자/스낵 (cookie-bite)</option>
+                                    <option value="gift">🎁 선물/마이쮸 (gift)</option>
+                                    <option value="pills">💊 비타민/약 (pills)</option>
+                                    <option value="star">⭐ 칭찬/특권 (star)</option>
+                                    <option value="ticket">🎟️ 쿠폰/티켓 (ticket)</option>
+                                    <option value="award">🏆 상장/면제권 (award)</option>
+                                    <option value="pen-ruler">📐 문구류 (pen-ruler)</option>
+                                    <option value="book">📚 책/도서 (book)</option>
+                                    <option value="gamepad">🎮 자유시간 (gamepad)</option>
+                                    <option value="heart">❤️ 하트/스티커 (heart)</option>
+                                    <option value="music">🎵 노래/음악 (music)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-2">
+                            <button onclick="toggleNewItemForm()" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-jua px-4 py-2 rounded-xl text-sm transition">취소</button>
+                            <button onclick="addNewStoreItem()" class="bg-pink-600 hover:bg-pink-700 text-white font-jua px-5 py-2 rounded-xl text-sm transition shadow flex items-center gap-1 active:scale-95">
+                                <i class="fa-solid fa-check"></i> 상점에 물건 추가하기
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 상품 목록 렌더링 영역 -->
+                    <div id="teacher-store-items-list" class="space-y-3"></div>
                 </div>
             </div>
 
